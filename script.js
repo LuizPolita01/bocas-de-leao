@@ -4,18 +4,6 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 attribution:'© OpenStreetMap'
 }).addTo(map);
 
-fetch("data/dados.json")
-.then(res => res.json())
-.then(data => {
-
-data.forEach(p => {
-
-L.marker([p.lat,p.lng])
+L.marker([-23.688879,-46.435607])
 .addTo(map)
-.bindPopup(
-"<b>"+p.tipo+"</b><br>"+p.tamanho
-);
-
-});
-
-});
+.bindPopup("Boca de Leão");
