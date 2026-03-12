@@ -10,6 +10,8 @@
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
 <style>
 
 body{
@@ -67,10 +69,6 @@ align-items:center;
 font-size:13px;
 }
 
-.checkbox-item input{
-margin-right:6px;
-}
-
 button{
 background:#1565c0;
 color:white;
@@ -111,13 +109,14 @@ font-size:12px;
 
 <div class="container">
 
-<label>ID da Boca</label>
+<label>ID</label>
 <input id="idboca" readonly>
 
 <label>Tipo</label>
+
 <select id="tipo">
-<option>Boca de Lobo</option>
-<option>Boca de Leão</option>
+<option value="BL">BL - Boca de Lobo</option>
+<option value="CL">CL - Caixa de Leão</option>
 </select>
 
 <label>Quantidade</label>
@@ -155,8 +154,8 @@ font-size:12px;
 </div>
 
 <button onclick="capturar()">Capturar Localização</button>
-<button onclick="salvar()">Salvar Boca</button>
-<button onclick="exportar()">Exportar CSV</button>
+<button onclick="salvar()">Salvar</button>
+<button onclick="exportarExcel()">Exportar Excel</button>
 
 <h3>Contador por Bairro</h3>
 <div id="contador"></div>
@@ -191,48 +190,61 @@ font-size:12px;
 
 let mapa=L.map('map').setView([-23.707,-46.414],13)
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-maxZoom:19
-}).addTo(mapa)
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(mapa)
+
+let iconeBL = L.icon({
+iconUrl:"https://cdn-icons-png.flaticon.com/512/854/854878.png",
+iconSize:[28,28]
+})
+
+let iconeCL = L.icon({
+iconUrl:"https://cdn-icons-png.flaticon.com/512/854/854866.png",
+iconSize:[28,28]
+})
 
 let latitude=null
 let longitude=null
-let contadorID=1
-let dados=[]
+
+let contadorBL = localStorage.getItem("contadorBL") ? Number(localStorage.getItem("contadorBL")) : 1
+let contadorCL = localStorage.getItem("contadorCL") ? Number(localStorage.getItem("contadorCL")) : 1
+
+let registros = localStorage.getItem("bocas") ? JSON.parse(localStorage.getItem("bocas")) : []
 
 const problemasLobo=[
-"Limpeza",
-"Trocar tampa",
-"Trocar guia",
-"Refazer caixa",
-"Obstrução tubulação",
-"Afundamento caixa",
-"Solapamento tubulação",
-"Caixa/tampa fora de padrão"
+"Limpeza","Trocar tampa","Trocar guia","Refazer caixa",
+"Obstrução tubulação","Afundamento caixa","Solapamento tubulação","Caixa fora padrão"
 ]
 
 const problemasLeao=[
-"Limpeza",
-"Reparo da grade",
-"Troca ou reinstalação de grade",
-"Refazer caixa",
-"Obstrução tubulação",
-"Afundamento caixa",
-"Solapamento tubulação",
-"Gradil ou caixa fora de padrão"
+"Limpeza","Reparo grade","Trocar grade","Refazer caixa",
+"Obstrução tubulação","Afundamento caixa","Solapamento tubulação","Gradil fora padrão"
 ]
 
 gerarID()
 carregarProblemas()
+carregarMapa()
 
 function gerarID(){
-document.getElementById("idboca").value="BL-"+String(contadorID).padStart(4,'0')
+
+let tipo=document.getElementById("tipo").value
+
+if(tipo==="BL")
+document.getElementById("idboca").value="BL-"+String(contadorBL).padStart(4,'0')
+
+if(tipo==="CL")
+document.getElementById("idboca").value="CL-"+String(contadorCL).padStart(4,'0')
+
 }
+
+document.getElementById("tipo").addEventListener("change",()=>{
+gerarID()
+carregarProblemas()
+})
 
 function carregarProblemas(){
 
 let tipo=document.getElementById("tipo").value
-let lista=tipo==="Boca de Leão"?problemasLeao:problemasLobo
+let lista = tipo==="CL" ? problemasLeao : problemasLobo
 let div=document.getElementById("problemas")
 
 div.innerHTML=""
@@ -247,14 +259,7 @@ ${p}
 
 }
 
-document.getElementById("tipo").addEventListener("change",carregarProblemas)
-
 function capturar(){
-
-if(!navigator.geolocation){
-alert("Geolocalização não suportada")
-return
-}
 
 navigator.geolocation.getCurrentPosition(function(pos){
 
@@ -265,8 +270,6 @@ mapa.setView([latitude,longitude],17)
 
 buscarRua(latitude,longitude)
 
-},function(){
-alert("Não foi possível obter localização")
 })
 
 }
@@ -277,23 +280,10 @@ fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${
 .then(r=>r.json())
 .then(d=>{
 
-if(d.address){
-
 document.getElementById("rua").value=d.address.road||""
-document.getElementById("bairro").value=d.address.suburb||d.address.neighbourhood||""
-
-}
+document.getElementById("bairro").value=d.address.suburb||""
 
 })
-
-}
-
-function corMarcador(problemas){
-
-if(problemas.length===0) return "blue"
-if(problemas.includes("Limpeza")) return "orange"
-
-return "red"
 
 }
 
@@ -316,32 +306,71 @@ document.querySelectorAll(".lado:checked").forEach(c=>lado.push(c.value))
 let problemas=[]
 document.querySelectorAll(".problema:checked").forEach(c=>problemas.push(c.value))
 
-let cor=corMarcador(problemas)
+let icone = tipo==="BL" ? iconeBL : iconeCL
 
-L.circleMarker([latitude,longitude],{radius:7,color:cor}).addTo(mapa)
+L.marker([latitude,longitude],{icon:icone}).addTo(mapa).bindPopup(id)
 
-dados.push({bairro,qtd})
+let registro={
+id,rua,bairro,tipo,qtd,
+lado:lado.join("/"),
+problemas:problemas.join(", "),
+lat:latitude,
+lon:longitude
+}
+
+registros.push(registro)
+
+localStorage.setItem("bocas",JSON.stringify(registros))
+
+if(tipo==="BL"){
+contadorBL++
+localStorage.setItem("contadorBL",contadorBL)
+}
+
+if(tipo==="CL"){
+contadorCL++
+localStorage.setItem("contadorCL",contadorCL)
+}
+
+adicionarTabela(registro)
+
+gerarID()
+
+contador()
+
+}
+
+function adicionarTabela(r){
 
 let tabela=document.querySelector("#tabela tbody")
 
 let linha=tabela.insertRow()
 
-linha.insertCell(0).innerText=id
-linha.insertCell(1).innerText=rua
-linha.insertCell(2).innerText=bairro
-linha.insertCell(3).innerText=tipo
-linha.insertCell(4).innerText=qtd
-linha.insertCell(5).innerText=lado.join("/")
-linha.insertCell(6).innerText=problemas.join(", ")
-linha.insertCell(7).innerText=latitude
-linha.insertCell(8).innerText=longitude
+linha.insertCell(0).innerText=r.id
+linha.insertCell(1).innerText=r.rua
+linha.insertCell(2).innerText=r.bairro
+linha.insertCell(3).innerText=r.tipo
+linha.insertCell(4).innerText=r.qtd
+linha.insertCell(5).innerText=r.lado
+linha.insertCell(6).innerText=r.problemas
+linha.insertCell(7).innerText=r.lat
+linha.insertCell(8).innerText=r.lon
 
-contadorID++
-gerarID()
+}
+
+function carregarMapa(){
+
+registros.forEach(r=>{
+
+let icone = r.tipo==="BL" ? iconeBL : iconeCL
+
+L.marker([r.lat,r.lon],{icon:icone}).addTo(mapa)
+
+adicionarTabela(r)
+
+})
 
 contador()
-
-document.querySelectorAll("input[type=checkbox]").forEach(c=>c.checked=false)
 
 }
 
@@ -349,7 +378,7 @@ function contador(){
 
 let cont={}
 
-dados.forEach(d=>{
+registros.forEach(d=>{
 
 if(!cont[d.bairro]) cont[d.bairro]=0
 cont[d.bairro]+=Number(d.qtd)
@@ -358,39 +387,22 @@ cont[d.bairro]+=Number(d.qtd)
 
 let html=""
 
-for(let b in cont){
-html+=b+" : "+cont[b]+" bocas <br>"
-}
+for(let b in cont)
+html+=b+" : "+cont[b]+" estruturas <br>"
 
 document.getElementById("contador").innerHTML=html
 
 }
 
-function exportar(){
+function exportarExcel(){
 
-let tabela=document.getElementById("tabela")
+let ws = XLSX.utils.json_to_sheet(registros)
 
-let csv=[]
+let wb = XLSX.utils.book_new()
 
-for(let i=0;i<tabela.rows.length;i++){
+XLSX.utils.book_append_sheet(wb,ws,"Drenagem")
 
-let cols=tabela.rows[i].querySelectorAll("td,th")
-let row=[]
-
-cols.forEach(c=>row.push('"'+c.innerText+'"'))
-
-csv.push(row.join(","))
-
-}
-
-let blob=new Blob([csv.join("\n")],{type:"text/csv;charset=utf-8;"})
-
-let a=document.createElement("a")
-
-a.href=URL.createObjectURL(blob)
-a.download="drenagem.csv"
-
-a.click()
+XLSX.writeFile(wb,"drenagem_urbana.xlsx")
 
 }
 
